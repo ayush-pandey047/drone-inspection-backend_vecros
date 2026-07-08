@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Drone Inspection Backend - Humans of Vecros Assignment
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 10
+    MemorySize: 128
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref DroneInspectionTable
+        BUCKET_NAME: !Ref DroneImagesBucket
+
+Resources:
+  DroneInspectionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: DroneInspectionTable
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  DroneImagesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub drone-inspection-images-${AWS::AccountId}
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [PUT, GET]
+            AllowedOrigins: ['*']
+            AllowedHeaders: ['*']
+
+  CreateInspectionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src.handlers.create_inspection.lambda_handler
+      CodeUri: .
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DroneInspectionTable
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /inspections
+            Method: post
+
+  ListInspectionsByWarehouseFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src.handlers.list_inspections_by_warehouse.lambda_handler
+      CodeUri: .
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref DroneInspectionTable
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /warehouses/{warehouseId}/inspections
+            Method: get
+
+  ListInspectionsByDroneFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src.handlers.list_inspections_by_drone.lambda_handler
+      CodeUri: .
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref DroneInspectionTable
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /drones/{droneId}/inspections
+            Method: get
+
+  GenerateUploadUrlFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src.handlers.generate_upload_url.lambda_handler
+      CodeUri: .
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref DroneInspectionTable
+        - S3WritePolicy:
+            BucketName: !Ref DroneImagesBucket
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /inspections/{inspectionId}/upload-url
+            Method: post
+
+  ListImagesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: src.handlers.list_images.lambda_handler
+      CodeUri: .
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref DroneInspectionTable
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            Path: /inspections/{inspectionId}/images
+            Method: get
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  TableName:
+    Value: !Ref DroneInspectionTable
+  BucketName:
+    Value: !Ref DroneImagesBucket
