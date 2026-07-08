@@ -33,8 +33,14 @@ class DynamoRepository:
         self.table = _get_table()
 
 
-    def put_item(self, item: dict) -> None:
-        self.table.put_item(Item=item)
+    def put_inspection(self, items: list[dict]) -> None:
+        """
+        Uses batch_write_item so both the main record and the pointer
+        record are written in a single network round-trip, not two.
+        """
+        with self.table.batch_writer() as batch:
+            for item in items:
+                batch.put_item(Item=item)
 
  
     def get_warehouse(self, warehouse_id: str) -> dict | None:
@@ -67,20 +73,6 @@ class DynamoRepository:
 
 
     def get_inspection_by_id(self, inspection_id: str) -> dict | None:
-        """
-        Inspection's main-table PK is WAREHOUSE#<id>, not INSPECTION#<id>,
-        so we can't get_item directly by inspection_id alone. We query GSI1
-        is keyed by drone, not inspection either — so for a pure
-        inspection_id lookup we scan-free query via a targeted GSI would be
-        ideal, but for our known access patterns, upload-url and list-images
-        both receive inspectionId as a path param without warehouse/drone
-        context. We handle this with a lightweight query using
-        entity_type + inspection_id via a Query against IMAGE partition
-        space is not applicable here (Inspections aren't stored under
-        INSPECTION# PK). Practical fix: Images ARE stored under
-        INSPECTION#<id>, so for AP4/AP5 we treat INSPECTION#<id> as its own
-        addressable partition directly.
-        """
         response = self.table.get_item(
             Key={"PK": f"INSPECTION#{inspection_id}", "SK": f"INSPECTION#{inspection_id}"}
         )
